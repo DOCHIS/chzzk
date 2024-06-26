@@ -135,8 +135,6 @@ export class ChzzkChat {
                 this.options.chatChannelId = null
             }
 
-            this.stopPingTimer()
-
             this.ws = null
 
             if (this._connected) {
@@ -150,6 +148,7 @@ export class ChzzkChat {
             throw new Error('Not connected')
         }
 
+        this.stopPingTimer()
         this.ws?.close()
 
         this.ws = null
