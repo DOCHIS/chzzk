@@ -5,6 +5,11 @@ import {accessToken, blind, BlindOptions, notice, NoticeOptions, profileCard} fr
 import {User} from "./api/user"
 import {DEFAULT_BASE_URLS} from "./const"
 
+// 동시 요청 제한 설정
+if (typeof global.chzzkRequestRunning === 'undefined') global.chzzkRequestRunning = 0
+if (typeof global.chzzkRequestRunningMax === 'undefined') global.chzzkRequestRunningMax = 50
+if (typeof global.chzzkRequestInterval === 'undefined') global.chzzkRequestInterval = 200
+
 export class ChzzkClient {
     readonly options: ChzzkClientOptions
     live = new ChzzkLive(this)
@@ -81,9 +86,21 @@ export class ChzzkClient {
             pathOrUrl = `${this.options.baseUrls.chzzkBaseUrl}${pathOrUrl}`
         }
 
+        if (global.chzzkRequestRunning >= global.chzzkRequestRunningMax) {
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    resolve(this.fetch(pathOrUrl, options));
+                }, global.chzzkRequestInterval || 200)
+            })
+        }
+
+        global.chzzkRequestRunning++;
         return fetch(pathOrUrl, {
             ...options,
-            headers
+            headers,
+        }).finally(() => {
+            global.chzzkRequestRunning--;
         })
     }
+
 }
