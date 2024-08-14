@@ -1,9 +1,9 @@
 import {ChzzkChat, ChzzkChatOptions} from "./chat"
-import {Channel, ChzzkLive, ChzzkManage, ChzzkSearch, Video} from "./api"
-import {ChzzkChatFunc, ChzzkClientOptions} from "./types"
+import {Channel, ChzzkLive, ChzzkManage, ChzzkSearch, recommendations, Video} from "./api"
+import {ChzzkChannelFunc, ChzzkChatFunc, ChzzkClientOptions} from "./types"
 import {accessToken, blind, BlindOptions, notice, NoticeOptions, profileCard} from "./api/chat"
 import {User} from "./api/user"
-import {DEFAULT_BASE_URLS} from "./const"
+import {DEFAULT_BASE_URLS, DEFAULT_USER_AGENT} from "./const"
 
 // 동시 요청 제한 설정
 if (typeof global.chzzkRequestRunning === 'undefined') global.chzzkRequestRunning = 0
@@ -18,7 +18,7 @@ export class ChzzkClient {
 
     constructor(options: ChzzkClientOptions = {}) {
         options.baseUrls = options.baseUrls || DEFAULT_BASE_URLS
-        options.userAgent = options.userAgent || "Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/37.0.2049.0 Safari/537.36"
+        options.userAgent = options.userAgent || DEFAULT_USER_AGENT
 
         this.options = options
     }
@@ -53,17 +53,23 @@ export class ChzzkClient {
         return func
     }
 
+    get channel(): ChzzkChannelFunc {
+        const func = async (channelId: string): Promise<Channel> => {
+            const r = await this.fetch(`/service/v1/channels/${channelId}`)
+            const data = await r.json()
+            const content = data['content']
+            return content?.channelId ? content : null
+        }
+
+        func.recommendations = async () => recommendations(this)
+
+        return func
+    }
+
     async user(): Promise<User> {
         return this.fetch(`${this.options.baseUrls.gameBaseUrl}/v1/user/getUserStatus`)
             .then(r => r.json())
             .then(data => data['content'] ?? null)
-    }
-
-    async channel(channelId: string): Promise<Channel> {
-        return this.fetch(`/service/v1/channels/${channelId}`)
-            .then(r => r.json())
-            .then(data => data['content'])
-            .then(content => content?.channelId ? content : null)
     }
 
     async video(videoNo: string | number): Promise<Video> {

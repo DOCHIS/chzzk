@@ -1,4 +1,4 @@
-import {Channel} from "./channel"
+import {Channel, RecommendationChannel} from "./channel"
 import {SearchResultVideo} from "./video"
 import {ChzzkClient} from "../client"
 import {Live} from "./live"
@@ -67,6 +67,19 @@ export interface Lounge {
     createdDate: string
     updatedDate: string
     officialLounge: boolean
+}
+
+export interface CategorySearchResult {
+    results: Category[]
+}
+
+export interface Category {
+    categoryType: string
+    categoryId: string
+    categoryValue: string
+    posterImageUrl: string
+    tags: string[]
+    dropsCampaignNos: string[]
 }
 
 export class ChzzkSearch {
@@ -163,6 +176,21 @@ export class ChzzkSearch {
         }).toString()
 
         return this.client.fetch(`${this.client.options.baseUrls.gameBaseUrl}/v2/search/lounges?${params}`)
+            .then(r => r.json())
+            .then(data => data['content'])
+    }
+
+    async categories(
+        keyword: string,
+        options: SearchOptions = DEFAULT_SEARCH_OPTIONS
+    ): Promise<CategorySearchResult> {
+        const params = new URLSearchParams({
+            keyword,
+            size: options.size.toString(),
+            offset: options.offset.toString()
+        }).toString()
+
+        return this.client.fetch(`/manage/v1/auto-complete/categories?${params}`)
             .then(r => r.json())
             .then(data => data['content'])
     }
