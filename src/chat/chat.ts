@@ -94,6 +94,11 @@ export class ChzzkChat {
                 .then(token => token.accessToken)
         }
 
+        // chatChannelId가 null일 경우 에러 방지
+        if (!this.options.chatChannelId) {
+            throw new Error('chatChannelId is required but was null or undefined')
+        }
+
         this.defaults = {
             cid: this.options.chatChannelId,
             svcid: "game",
@@ -131,8 +136,8 @@ export class ChzzkChat {
         this.ws.onclose = () => {
             if (!this.isReconnect) {
                 this.emit('disconnect', this.options.chatChannelId)
-                this.stopPolling()
-                this.options.chatChannelId = null
+                // pollInterval이 설정된 경우 polling은 계속 실행하여 방송 재시작 감지
+                // chatChannelId는 null로 설정하지 않아 재연결 가능하도록 유지
             }
 
             this.stopPingTimer()
@@ -161,6 +166,9 @@ export class ChzzkChat {
         }
 
         this._connected = false
+
+        // 명시적인 disconnect 호출 시에만 polling 중지
+        this.stopPolling()
     }
 
     async reconnect() {
