@@ -111,10 +111,12 @@ export class ChzzkChat {
                 .reduce((a, b) => a + b)
         ) % 9 + 1
 
-        this.ws = new WebSocket(`wss://kr-ss${serverId}.chat.naver.com/chat`)
+        const ws = new WebSocket(`wss://kr-ss${serverId}.chat.naver.com/chat`)
+        this.ws = ws
 
-        this.ws.onopen = () => {
-            this.ws.send(JSON.stringify({
+        ws.onopen = () => {
+            if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return
+            ws.send(JSON.stringify({
                 bdy: {
                     accTkn: this.options.accessToken,
                     auth: this.uid ? "SEND" : "READ",
@@ -126,38 +128,36 @@ export class ChzzkChat {
                 ...this.defaults
             }))
 
-            if (!this.isReconnect) {
-                this.startPolling()
-            }
+            this.startPolling()
         }
 
-        this.ws.onmessage = this.handleMessage.bind(this)
+        ws.onmessage = this.handleMessage.bind(this)
 
-        this.ws.onclose = () => {
+        ws.onclose = () => {
+            // A previous socket can finish closing after a replacement socket
+            // has already been assigned. Never let it clear the new socket.
+            if (this.ws !== ws) return
+
             if (!this.isReconnect) {
                 this.emit('disconnect', this.options.chatChannelId)
-                // pollInterval이 설정된 경우 polling은 계속 실행하여 방송 재시작 감지
-                // chatChannelId는 null로 설정하지 않아 재연결 가능하도록 유지
             }
 
             this.stopPingTimer()
-
             this.ws = null
+            this.sid = null
+            this._connected = false
 
-            if (this._connected) {
-                this.disconnect()
+            if (this.client) {
+                this.options.accessToken = null
+                this.uid = null
             }
         }
     }
 
     async disconnect() {
-        if (!this._connected) {
-            throw new Error('Not connected')
-        }
-
-        this.ws?.close()
-
+        const ws = this.ws
         this.ws = null
+        ws?.close()
         this.sid = null
 
         if (this.client) {
@@ -176,8 +176,9 @@ export class ChzzkChat {
 
         if (this._connected) {
             await this.disconnect()
-            await this.connect()
         }
+
+        await this.connect()
     }
 
     requestRecentChat(count: number = 50) {
@@ -256,6 +257,9 @@ export class ChzzkChat {
     }
 
     private async handleMessage(data: MessageEvent) {
+        const ws = this.ws
+        if (!ws || (data.target && data.target !== ws)) return
+
         const json = JSON.parse(data.data as string)
         const body = json['bdy']
 
@@ -274,7 +278,8 @@ export class ChzzkChat {
                 break
 
             case ChatCmd.PING:
-                this.ws.send(JSON.stringify({
+                if (ws.readyState !== WebSocket.OPEN) return
+                ws.send(JSON.stringify({
                     cmd: ChatCmd.PONG,
                     ver: "2"
                 }))
@@ -321,9 +326,8 @@ export class ChzzkChat {
                 this.emit('blind', body)
         }
 
-        if (json.cmd != ChatCmd.PONG) {
-            this.startPingTimer()
-        }
+        // Any inbound frame, including PONG, proves that the socket is alive.
+        this.startPingTimer()
     }
 
     private parseChat(chat: any, isRecent: boolean = false) {
@@ -369,7 +373,7 @@ export class ChzzkChat {
     private startPolling() {
         if (!this.options.pollInterval || this.pollIntervalId) return
 
-        this.pollIntervalId = setInterval(async () => {
+        const poll = async () => {
             const chatChannelId = await this.client.live.status(this.options.channelId)
                 .then(status => status?.chatChannelId)
                 .catch(() => null)
@@ -379,7 +383,13 @@ export class ChzzkChat {
 
                 await this.reconnect()
             }
-        }, this.options.pollInterval)
+        }
+
+        const firstDelay = Math.floor(Math.random() * this.options.pollInterval)
+        this.pollIntervalId = setTimeout(() => {
+            poll()
+            this.pollIntervalId = setInterval(poll, this.options.pollInterval)
+        }, firstDelay)
     }
 
     private stopPolling() {
@@ -407,13 +417,18 @@ export class ChzzkChat {
     }
 
     private sendPing() {
-        if (!this.ws) return
+        const ws = this.ws
+        if (!ws || ws.readyState !== WebSocket.OPEN) return
 
-        this.ws.send(JSON.stringify({
+        ws.send(JSON.stringify({
             cmd: ChatCmd.PING,
             ver: "2"
         }))
 
-        this.pingTimeoutId = setTimeout(() => this.sendPing(), 20000)
+        // A socket that does not answer this ping would otherwise remain in
+        // the channel map forever and silently drop all future donations.
+        this.pingTimeoutId = setTimeout(() => {
+            if (this.ws === ws) ws.close()
+        }, 20000)
     }
 }
